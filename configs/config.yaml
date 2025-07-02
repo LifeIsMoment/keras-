@@ -1,0 +1,43 @@
+# 프로젝트 설정
+project:
+  name: "keras-semiconductor-defect-detection"
+  version: "0.1.0"
+  author: "LifeIsMoment"
+
+# 데이터 설정
+data:
+  dataset_name: "WM-811k"
+  raw_data_path: "data/raw"
+  processed_data_path: "data/processed"
+  image_size: [224, 224]
+  batch_size: 32
+  validation_split: 0.2
+  test_split: 0.1
+
+# 모델 설정
+model:
+  input_shape: [224, 224, 1]
+  num_classes: 9
+  learning_rate: 0.001
+  epochs: 100
+  early_stopping_patience: 15
+  reduce_lr_patience: 10
+
+# 훈련 설정
+training:
+  use_data_augmentation: true
+  save_best_only: true
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+
+# 클래스 정보
+classes:
+  - "Center"
+  - "Donut"
+  - "Edge-Loc"
+  - "Edge-Ring"
+  - "Loc"
+  - "Random"
+  - "Scratch"
+  - "Near-full"
+  - "None"
