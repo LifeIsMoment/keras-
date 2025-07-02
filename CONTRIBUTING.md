@@ -145,7 +145,7 @@ class DefectDetectionCNN:
 # 함수/변수: snake_case
 def train_model():
     learning_rate = 0.001
-    
+
 # 상수: UPPER_SNAKE_CASE
 MAX_EPOCHS = 100
 DEFAULT_BATCH_SIZE = 32
@@ -159,7 +159,7 @@ DEFAULT_BATCH_SIZE = 32
 from typing import List, Dict, Optional, Tuple
 
 def process_images(
-    image_paths: List[str], 
+    image_paths: List[str],
     batch_size: int = 32
 ) -> Tuple[np.ndarray, np.ndarray]:
     """이미지를 배치로 처리합니다."""
@@ -181,7 +181,7 @@ def train_model(
 
     Args:
         model: 훈련할 Keras 모델
-        train_data: 훈련 데이터셋  
+        train_data: 훈련 데이터셋
         epochs: 훈련 에포크 수
 
     Returns:
@@ -189,7 +189,7 @@ def train_model(
 
     Raises:
         ValueError: 잘못된 입력 파라미터인 경우
-        
+
     Example:
         >>> model = create_cnn_model()
         >>> history = train_model(model, train_ds, epochs=50)
@@ -248,25 +248,25 @@ from src.models.cnn_model import DefectDetectionCNN
 
 class TestDefectDetectionCNN:
     """CNN 모델 테스트 클래스."""
-    
+
     @pytest.fixture
     def cnn_model(self):
         """테스트용 CNN 모델 픽스처."""
         return DefectDetectionCNN()
-    
+
     def test_model_creation(self, cnn_model):
         """모델 생성 테스트."""
         model = cnn_model.build_model()
         assert isinstance(model, tf.keras.Model)
         assert model.input_shape[1:] == (224, 224, 1)
         assert model.output_shape[1] == 9
-    
+
     def test_model_compilation(self, cnn_model):
-        """모델 컴파일 테스트.""" 
+        """모델 컴파일 테스트."""
         model = cnn_model.build_model()
         assert model.optimizer is not None
         assert model.loss is not None
-        
+
     @pytest.mark.slow
     def test_model_training(self, cnn_model, sample_data):
         """모델 훈련 테스트 (느린 테스트)."""
