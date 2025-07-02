@@ -1,0 +1,300 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  lint-and-format:
+    name: 코드 품질 검사
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 저장소 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Python 환경 설정
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: 의존성 설치
+      run: |
+        python -m pip install --upgrade pip
+        pip install black flake8 mypy isort
+        pip install -r requirements.txt
+
+    - name: Black 코드 포맷팅 검사
+      run: |
+        black --check --diff src tests
+
+    - name: isort import 정렬 검사
+      run: |
+        isort --check-only --diff src tests
+
+    - name: Flake8 코드 스타일 검사
+      run: |
+        flake8 src tests --max-line-length=88 --extend-ignore=E203,W503
+
+    - name: MyPy 타입 검사
+      run: |
+        mypy src --ignore-missing-imports
+
+  test:
+    name: 테스트 실행
+    runs-on: ubuntu-latest
+    needs: lint-and-format
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+
+    steps:
+    - name: 저장소 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Python ${{ matrix.python-version }} 환경 설정
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: 의존성 설치
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov pytest-mock
+
+    - name: 단위 테스트 실행
+      run: |
+        pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing
+
+    - name: 커버리지 리포트 업로드
+      uses: codecov/codecov-action@v3
+      if: matrix.python-version == '3.11'
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  model-test:
+    name: 모델 테스트
+    runs-on: ubuntu-latest
+    needs: lint-and-format
+
+    steps:
+    - name: 저장소 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Python 환경 설정
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: 의존성 설치
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: 설정 파일 확인
+      run: |
+        if [ ! -f configs/config.yaml ]; then
+          echo "설정 파일이 없습니다. 기본 설정 파일을 생성합니다."
+          mkdir -p configs
+          cat > configs/config.yaml << EOF
+        data:
+          raw_data_path: "data/raw"
+          processed_data_path: "data/processed"
+          image_size: [224, 224]
+          batch_size: 32
+
+        model:
+          input_shape: [224, 224, 1]
+          num_classes: 9
+          learning_rate: 0.001
+          early_stopping_patience: 10
+          reduce_lr_patience: 5
+
+        training:
+          checkpoint_dir: "checkpoints"
+          save_best_only: true
+
+        classes:
+          - "Center"
+          - "Donut"
+          - "Edge-Loc"
+          - "Edge-Ring"
+          - "Loc"
+          - "Near-full"
+          - "None"
+          - "Random"
+          - "Scratch"
+        EOF
+        fi
+
+    - name: 모델 생성 테스트
+      run: |
+        python -c "
+        import sys
+        sys.path.insert(0, 'src')
+        from models.cnn_model import DefectDetectionCNN
+        print('🏗️ CNN 모델 생성 테스트 시작')
+        cnn = DefectDetectionCNN()
+        model = cnn.build_model()
+        print(f'✅ 모델 생성 성공! 파라미터 수: {model.count_params():,}')
+        print('📋 모델 요약:')
+        model.summary()
+        "
+
+    - name: 데이터 매니저 테스트
+      run: |
+        python -c "
+        import sys
+        sys.path.insert(0, 'src')
+        from data.data_manager import DataManager
+        print('📊 데이터 매니저 테스트 시작')
+        dm = DataManager()
+        print('✅ 데이터 매니저 초기화 성공!')
+        "
+
+    - name: 콜백 시스템 테스트
+      run: |
+        python -c "
+        import sys
+        sys.path.insert(0, 'src')
+        from models.cnn_model import DefectDetectionCNN
+        print('🔄 콜백 시스템 테스트 시작')
+        cnn = DefectDetectionCNN()
+        callbacks = cnn.prepare_callbacks()
+        print(f'✅ 콜백 생성 성공! 콜백 수: {len(callbacks)}')
+        for i, callback in enumerate(callbacks):
+            print(f'  {i+1}. {callback.__class__.__name__}')
+        "
+
+  integration-test:
+    name: 통합 테스트
+    runs-on: ubuntu-latest
+    needs: [test, model-test]
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: 저장소 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Python 환경 설정
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: 의존성 설치
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: 샘플 데이터 생성 및 미니 훈련 테스트
+      run: |
+        python -c "
+        import sys, os
+        sys.path.insert(0, 'src')
+
+        # 설정 파일 생성
+        os.makedirs('configs', exist_ok=True)
+        with open('configs/config.yaml', 'w') as f:
+            f.write('''
+        data:
+          raw_data_path: \"data/raw\"
+          processed_data_path: \"data/processed\"
+          image_size: [64, 64]  # 테스트용 작은 크기
+          batch_size: 4
+
+        model:
+          input_shape: [64, 64, 1]
+          num_classes: 9
+          learning_rate: 0.01
+          early_stopping_patience: 2
+          reduce_lr_patience: 1
+
+        training:
+          checkpoint_dir: \"test_checkpoints\"
+          save_best_only: true
+
+        classes:
+          - \"Center\"
+          - \"Donut\"
+          - \"Edge-Loc\"
+          - \"Edge-Ring\"
+          - \"Loc\"
+          - \"Near-full\"
+          - \"None\"
+          - \"Random\"
+          - \"Scratch\"
+            ''')
+
+        # 미니 데이터셋 생성
+        from data.data_manager import DataManager
+        dm = DataManager()
+        print('📊 미니 데이터셋 생성 중...')
+        dm.create_sample_dataset(samples_per_class=2)  # 클래스당 2개
+
+        # 모델 빌드 및 구조 확인
+        from models.cnn_model import DefectDetectionCNN
+        cnn = DefectDetectionCNN()
+        model = cnn.build_model()
+        print(f'✅ 통합 테스트 성공! 모델 파라미터: {model.count_params():,}')
+        "
+
+  security-check:
+    name: 보안 검사
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: 저장소 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Python 환경 설정
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Safety 보안 검사 설치
+      run: |
+        pip install safety bandit
+
+    - name: 의존성 보안 취약점 검사
+      run: |
+        pip install -r requirements.txt
+        safety check
+
+    - name: 코드 보안 취약점 검사
+      run: |
+        bandit -r src -f json -o bandit-report.json || true
+        bandit -r src
+
+  notify:
+    name: 알림
+    runs-on: ubuntu-latest
+    needs: [lint-and-format, test, model-test]
+    if: always()
+
+    steps:
+    - name: 결과 요약
+      run: |
+        echo "🚀 CI 파이프라인 실행 완료"
+        echo "📊 결과 요약:"
+        echo "  - 코드 품질 검사: ${{ needs.lint-and-format.result }}"
+        echo "  - 단위 테스트: ${{ needs.test.result }}"
+        echo "  - 모델 테스트: ${{ needs.model-test.result }}"
+
+        if [[ "${{ needs.lint-and-format.result }}" == "success" && "${{ needs.test.result }}" == "success" && "${{ needs.model-test.result }}" == "success" ]]; then
+          echo "✅ 모든 검사 통과! 머지 준비 완료"
+        else
+          echo "❌ 일부 검사 실패. 수정 후 다시 실행해주세요."
+        fi
