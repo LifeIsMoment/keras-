@@ -349,7 +349,7 @@ python train.py --batch-size 16  # 기본값 32에서 감소
 ## 👥 팀
 
 - **개발자**: LifeIsMoment
-- **이메일**: [이메일 주소]
+- **이메일**: [crosefrog@naver.com]
 - **GitHub**: [@LifeIsMoment](https://github.com/LifeIsMoment)
 
 ## 🙏 감사의 글
